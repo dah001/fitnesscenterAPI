@@ -1,0 +1,86 @@
+version: '3.9'
+
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: fitness_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: fitnesscenter
+      MYSQL_USER: fitness_app
+      MYSQL_PASSWORD: AppPass123!
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 5
+
+  mongodb:
+    image: mongo:7.0
+    container_name: fitness_mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: mongopassword
+      MONGO_INITDB_DATABASE: fitnesscenter
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 15s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5
+    container_name: fitness_neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/neo4jpassword
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 20s
+      retries: 5
+
+  api:
+    build:
+      context: ..
+      dockerfile: FitnessCenter.API/Dockerfile
+    container_name: fitness_api
+    restart: unless-stopped
+    ports:
+      - "5000:8080"
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=mysql;Port=3306;Database=fitnesscenter;User=fitness_app;Password=AppPass123!;
+      - MongoDB__ConnectionString=mongodb://admin:mongopassword@mongodb:27017
+      - MongoDB__Database=fitnesscenter
+      - Neo4j__Uri=bolt://neo4j:7687
+      - Neo4j__Username=neo4j
+      - Neo4j__Password=neo4jpassword
+      - Jwt__Key=fitness-center-super-secret-key-2024!!
+      - Anthropic__ApiKey=${ANTHROPIC_API_KEY:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+  mongo_data:
+  neo4j_data:
