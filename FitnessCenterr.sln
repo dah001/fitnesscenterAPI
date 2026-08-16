@@ -30,6 +30,8 @@ Global
 		{EAAFC0DA-7260-487B-92AE-D7F6CFB0DA54}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EAAFC0DA-7260-487B-92AE-D7F6CFB0DA54}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EAAFC0DA-7260-487B-92AE-D7F6CFB0DA54}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AAAAAAAA-1111-2222-3333-444444444444}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AAAAAAAA-1111-2222-3333-444444444444}.Debug|Any CPU.Build.0 = Debug|Any CPU
 	EndGlobalSection
 EndGlobal
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FitnessCenter.Tests", "FitnessCenter.Tests\FitnessCenter.Tests.csproj", "{AAAAAAAA-1111-2222-3333-444444444444}"

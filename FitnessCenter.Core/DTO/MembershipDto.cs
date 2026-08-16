@@ -23,3 +23,12 @@ public class UpdateMembershipDto
     public int SubscriptionID { get; set; }
     public DateOnly StartDate { get; set; }
 }
+// Tilføjet: bruges til at oprette Membership + Payment sammen i én transaktion (se MembershipService)
+public class CreateMembershipWithPaymentDto
+{
+    public int MemberID { get; set; }
+    public int SubscriptionID { get; set; }
+    public DateOnly StartDate { get; set; }
+    public decimal PaymentAmount { get; set; }
+    public string PaymentType { get; set; } = "Card";
+}

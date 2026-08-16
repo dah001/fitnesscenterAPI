@@ -4,6 +4,7 @@ using FitnessCenterr.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using FitnessCenterr.Core.DTOs.Services.Interfaces;
 
 namespace FitnessCenterr.API.Controllers;
 
@@ -13,7 +14,21 @@ namespace FitnessCenterr.API.Controllers;
 public class MembershipsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public MembershipsController(AppDbContext db) => _db = db;
+    private readonly IMembershipService _membershipService;
+    public MembershipsController(AppDbContext db, IMembershipService membershipService)
+    {
+        _db = db;
+        _membershipService = membershipService;
+    }
+
+    // Opretter Membership + Payment sammen, i én transaktion (se MembershipService)
+    [HttpPost("with-payment")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> CreateWithPayment([FromBody] CreateMembershipWithPaymentDto dto)
+    {
+        var result = await _membershipService.CreateWithPaymentAsync(dto);
+        return CreatedAtAction(nameof(GetById), new { id = result.MembershipID }, result);
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
