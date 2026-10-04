@@ -7,26 +7,32 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using Neo4j.Driver;
 
+// ── 1. KONFIGURATION ────────────────────────────────────────────────────────
+// Læser connection strings og credentials fra appsettings.json.
+// Intet migreres endnu her — det er kun opsætning.
 var config = new ConfigurationBuilder()
     .SetBasePath(Directory.GetCurrentDirectory())
     .AddJsonFile("appsettings.json")
     .Build();
 
-var mysqlConn   = config.GetConnectionString("DefaultConnection")!;
-var mongoConn   = config["MongoDB:ConnectionString"]!;
+var mysqlConn   = config.GetConnectionString("DefaultConnection")!;  
+var mongoConn   = config["MongoDB:ConnectionString"]!;                // MongoDB Atlas (mål)
 var mongoDbName = config["MongoDB:Database"]!;
-var neo4jUri    = config["Neo4j:Uri"]!;
+var neo4jUri    = config["Neo4j:Uri"]!;                               // Neo4j AuraDB (mål)
 var neo4jUser   = config["Neo4j:Username"]!;
 var neo4jPass   = config["Neo4j:Password"]!;
 
 Console.WriteLine("Henter data fra MySQL...");
 
+// ── 2. LÆSNING FRA MYSQL ─────────────────────────────────────────────────────
+// Migration starter 
 var dbOptions = new DbContextOptionsBuilder<AppDbContext>()
     .UseMySql(mysqlConn, new MySqlServerVersion(new Version(8, 0, 0)))
     .Options;
 
 using var db = new AppDbContext(dbOptions);
 
+// n+1 problem
 var trainers      = await db.Trainers.ToListAsync();
 var members       = await db.Members.Include(m => m.Trainer).ToListAsync();
 var subscriptions = await db.Subscriptions.ToListAsync();
@@ -47,7 +53,9 @@ Console.WriteLine($"  Trainers: {trainers.Count}, Members: {members.Count}, Clas
 Console.WriteLine($"  Locations: {locations.Count}, Centers: {centers.Count}, Halls: {halls.Count}");
 Console.WriteLine($"  Staff: {staffs.Count}, Payments: {payments.Count}, Users: {users.Count}");
 
-// ── MongoDB ───────────────────────────────────────────────────────────────────
+// 3. MIGRERING TIL MONGODB 
+
+// MONGODB START
 Console.WriteLine("\nMigrerer til MongoDB...");
 
 try
@@ -55,13 +63,14 @@ try
     var mongoClient = new MongoClient(mongoConn);
     var mongoDB     = mongoClient.GetDatabase(mongoDbName);
 
+ 
     await mongoDB.DropCollectionAsync("members");
     await mongoDB.DropCollectionAsync("classes");
     await mongoDB.DropCollectionAsync("subscriptions");
     await mongoDB.DropCollectionAsync("centers");
     await mongoDB.DropCollectionAsync("staff");
     await mongoDB.DropCollectionAsync("payments");
-
+    
     var membersCol = mongoDB.GetCollection<BsonDocument>("members");
     var memberDocs = members.Select(m =>
     {
@@ -74,12 +83,18 @@ try
             { "name", m.Name },
             { "email", m.Email ?? "" },
             { "birthDate", m.BirthDate.HasValue ? m.BirthDate.Value.ToDateTime(TimeOnly.MinValue) : BsonNull.Value },
+
+          
             { "user", memberUser != null
                 ? new BsonDocument { { "userID", memberUser.UserID }, { "username", memberUser.Username }, { "role", memberUser.Role ?? "" } }
                 : BsonNull.Value },
+
+            
             { "trainer", m.Trainer != null
                 ? new BsonDocument { { "trainerID", m.TrainerID ?? 0 }, { "name", m.Trainer.Name } }
                 : BsonNull.Value },
+
+           
             { "membership", membership != null
                 ? new BsonDocument
                 {
@@ -89,6 +104,8 @@ try
                     { "startDate", membership.StartDate.ToDateTime(TimeOnly.MinValue) }
                 }
                 : BsonNull.Value },
+
+            
             { "bookings", new BsonArray(
                 bookings.Where(b => b.MemberID == m.MemberID)
                         .Select(b => new BsonDocument
@@ -97,6 +114,8 @@ try
                             { "classID", b.ClassID },
                             { "className", b.Class.Name }
                         })) },
+
+        
             { "payments", new BsonArray(
                 memberPayments.Select(p => new BsonDocument
                 {
@@ -110,7 +129,7 @@ try
 
     await membersCol.InsertManyAsync(memberDocs);
     Console.WriteLine($"  MongoDB: {memberDocs.Count} members indsat.");
-
+    
     var classesCol = mongoDB.GetCollection<BsonDocument>("classes");
     var classDocs = classes.Select(c => new BsonDocument
     {
@@ -120,12 +139,12 @@ try
         { "trainer", new BsonDocument { { "trainerID", c.TrainerID }, { "name", c.Trainer.Name } } },
         { "hall", c.Hall != null ? new BsonDocument { { "hallID", c.HallID ?? 0 }, { "name", c.Hall.Name ?? "" } } : BsonNull.Value },
         { "location", c.Location != null ? new BsonDocument { { "locationID", c.LocationID ?? 0 }, { "city", c.Location.City } } : BsonNull.Value },
-        { "participantCount", bookings.Count(b => b.ClassID == c.ClassID) }
+        { "participantCount", bookings.Count(b => b.ClassID == c.ClassID) } // derived value
     }).ToList();
 
     await classesCol.InsertManyAsync(classDocs);
     Console.WriteLine($"  MongoDB: {classDocs.Count} classes indsat.");
-
+    
     var subsCol = mongoDB.GetCollection<BsonDocument>("subscriptions");
     var subDocs = subscriptions.Select(s => new BsonDocument
     {
@@ -137,7 +156,7 @@ try
 
     await subsCol.InsertManyAsync(subDocs);
     Console.WriteLine($"  MongoDB: {subDocs.Count} subscriptions indsat.");
-
+    
     var centersCol = mongoDB.GetCollection<BsonDocument>("centers");
     var centerDocs = centers.Select(c => new BsonDocument
     {
@@ -150,6 +169,7 @@ try
             { "vendingMachineID", v.VendingMachineID },
             { "name", v.Name ?? "" },
             { "location", v.Location ?? "" },
+            // Nested array inde i et embedded objekt — VendingMachineStock-rækker
             { "stock", new BsonArray(stocks.Where(s => s.VendingMachineID == v.VendingMachineID).Select(s => new BsonDocument
             {
                 { "product", s.ProductName ?? "" },
@@ -162,6 +182,7 @@ try
     await centersCol.InsertManyAsync(centerDocs);
     Console.WriteLine($"  MongoDB: {centerDocs.Count} centers indsat.");
 
+  
     var staffCol = mongoDB.GetCollection<BsonDocument>("staff");
     var staffDocs = staffs.Select(s => new BsonDocument
     {
@@ -179,8 +200,10 @@ catch (Exception ex)
     Console.WriteLine($"  ⚠️  MongoDB fejlede: {ex.Message}");
     Console.WriteLine("  MongoDB springes over – fortsætter med Neo4j...");
 }
+// MONGODB SLUT
 
-// ── Neo4j ─────────────────────────────────────────────────────────────────────
+// 4. MIGRERING TIL NEO4J 
+// NEO4J START
 Console.WriteLine("\nMigrerer til Neo4j...");
 
 var neo4jDriver = GraphDatabase.Driver(neo4jUri, AuthTokens.Basic(neo4jUser, neo4jPass));
@@ -188,20 +211,24 @@ var session = neo4jDriver.AsyncSession();
 
 await session.RunAsync("MATCH (n) DETACH DELETE n");
 
+
 foreach (var t in trainers)
     await session.RunAsync("CREATE (t:Trainer {trainerID: $id, name: $name})",
         new { id = t.TrainerID, name = t.Name });
 Console.WriteLine($"  Neo4j: {trainers.Count} Trainer noder oprettet.");
+
 
 foreach (var s in subscriptions)
     await session.RunAsync("CREATE (s:Subscription {subscriptionID: $id, type: $type, price: $price})",
         new { id = s.SubscriptionID, type = s.Type, price = (double)s.Price });
 Console.WriteLine($"  Neo4j: {subscriptions.Count} Subscription noder oprettet.");
 
+
 foreach (var l in locations)
     await session.RunAsync("CREATE (l:Location {locationID: $id, city: $city})",
         new { id = l.LocationID, city = l.City });
 Console.WriteLine($"  Neo4j: {locations.Count} Location noder oprettet.");
+
 
 foreach (var c in centers)
     await session.RunAsync(
@@ -209,11 +236,13 @@ foreach (var c in centers)
         new { id = c.CenterID, lId = c.LocationID });
 Console.WriteLine($"  Neo4j: {centers.Count} Center noder oprettet.");
 
+
 foreach (var h in halls)
     await session.RunAsync(
         "MATCH (c:Center {centerID: $cId}) CREATE (h:Hall {hallID: $id, name: $name})-[:PART_OF]->(c)",
         new { id = h.HallID, name = h.Name ?? "", cId = h.CenterID });
 Console.WriteLine($"  Neo4j: {halls.Count} Hall noder oprettet.");
+
 
 foreach (var e in equipments)
     await session.RunAsync(
@@ -221,11 +250,13 @@ foreach (var e in equipments)
         new { id = e.EquipmentID, name = e.Name ?? "", cId = e.CenterID ?? 0 });
 Console.WriteLine($"  Neo4j: {equipments.Count} Equipment noder oprettet.");
 
+
 foreach (var v in vending)
     await session.RunAsync(
         "MATCH (c:Center {centerID: $cId}) CREATE (v:VendingMachine {vendingMachineID: $id, name: $name, location: $loc})-[:LOCATED_IN]->(c)",
         new { id = v.VendingMachineID, name = v.Name ?? "", loc = v.Location ?? "", cId = v.CenterID ?? 0 });
 Console.WriteLine($"  Neo4j: {vending.Count} VendingMachine noder oprettet.");
+
 
 foreach (var s in stocks)
     await session.RunAsync(
@@ -237,6 +268,7 @@ foreach (var s in staffs)
     await session.RunAsync("CREATE (s:Staff {staffID: $id, name: $name, role: $role})",
         new { id = s.StaffID, name = s.Name, role = s.Role ?? "" });
 Console.WriteLine($"  Neo4j: {staffs.Count} Staff noder oprettet.");
+
 
 foreach (var u in users)
 {
@@ -253,6 +285,7 @@ foreach (var u in users)
         await session.RunAsync(
             "MATCH (u:User {userID: $uId}), (t:Trainer {trainerID: $tId}) CREATE (t)-[:HAS_USER]->(u)",
             new { uId = u.UserID, tId = u.TrainerID.Value });
+    
 }
 Console.WriteLine($"  Neo4j: {users.Count} User noder oprettet.");
 
@@ -333,7 +366,11 @@ foreach (var p in payments)
         "MATCH (m:Member {memberID: $mId}), (p:Payment {paymentID: $pId}) CREATE (m)-[:MADE_PAYMENT]->(p)",
         new { mId = p.MemberID, pId = p.PaymentID });
 Console.WriteLine($"  Neo4j: {payments.Count} MADE_PAYMENT relationer oprettet.");
+// >>> NEO4J SLUT <<<
 
+// ── 5. OPRYDNING ─────────────────────────────────────────────────────────────
+// Lukker Neo4j-session og driver pænt. Fejl her ignoreres bevidst (safe to ignore),
+// da migrationen allerede er gennemført på dette tidspunkt.
 try
 {
     await session.CloseAsync();

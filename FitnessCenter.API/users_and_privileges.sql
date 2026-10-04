@@ -10,7 +10,7 @@ DROP USER IF EXISTS 'fitness_user'@'%';
 CREATE USER 'fitness_user'@'%' IDENTIFIED BY 'StrongPass123!';
 
 -- Giv kun nødvendige rettigheder (ikke DROP, ALTER, etc.)
-GRANT SELECT, INSERT, UPDATE, DELETE ON kunforhustlers_dk_db.*
+GRANT SELECT, INSERT, UPDATE, DELETE ON yonis_dk_db_Kunforabdi.*
     TO 'fitness_user'@'%';
 
 -- Anvend ændringerne
