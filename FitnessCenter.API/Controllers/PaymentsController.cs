@@ -48,7 +48,9 @@ public class PaymentsController : ControllerBase
         var payment = new Payment { MemberID = dto.MemberID, Amount = dto.Amount, PaymentDate = dto.PaymentDate, PaymentType = dto.PaymentType };
         _db.Payments.Add(payment);
         await _db.SaveChangesAsync();
-        return CreatedAtAction(nameof(GetById), new { id = payment.PaymentID }, payment);
+        var memberName = await _db.Members.Where(m => m.MemberID == payment.MemberID).Select(m => m.Name).FirstOrDefaultAsync();
+        return CreatedAtAction(nameof(GetById), new { id = payment.PaymentID },
+            new PaymentDto { PaymentID = payment.PaymentID, MemberID = payment.MemberID, MemberName = memberName ?? "", Amount = payment.Amount, PaymentDate = payment.PaymentDate, PaymentType = payment.PaymentType });
     }
 
     [HttpDelete("{id}")]

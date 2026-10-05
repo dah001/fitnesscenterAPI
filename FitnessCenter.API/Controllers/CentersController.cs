@@ -14,21 +14,70 @@ public class CentersController : ControllerBase
     private readonly AppDbContext _db;
     public CentersController(AppDbContext db) => _db = db;
 
+    // Henter center med by, haller, udstyr og automater (med varer) – uden null-løkker
+    private IQueryable<object> CenterQuery() => _db.Centers
+        .OrderBy(c => c.CenterID)
+        .Select(c => new
+        {
+            c.CenterID,
+            c.LocationID,
+            City = c.Location.City,
+            Halls = c.Halls
+                .OrderBy(h => h.HallID)
+                .Select(h => new { h.HallID, h.Name })
+                .ToList(),
+            Equipments = c.Equipments
+                .OrderBy(e => e.EquipmentID)
+                .Select(e => new { e.EquipmentID, e.Name })
+                .ToList(),
+            VendingMachines = c.VendingMachines
+                .OrderBy(v => v.VendingMachineID)
+                .Select(v => new
+                {
+                    v.VendingMachineID,
+                    v.Name,
+                    v.Location,
+                    Stocks = v.Stocks
+                        .OrderBy(st => st.StockID)
+                        .Select(st => new { st.StockID, st.ProductName, st.Quantity, st.Price })
+                        .ToList()
+                })
+                .ToList()
+        });
+
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
         if (page < 1 || pageSize < 1 || pageSize > 100) return BadRequest(new { message = "Ugyldig page/pageSize." });
         var total = await _db.Centers.CountAsync();
-        var items = await _db.Centers.Include(c => c.Location).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+        var items = await CenterQuery().Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
         return Ok(new { items, totalCount = total, page, pageSize });
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var c = await _db.Centers.Include(c => c.Location).FirstOrDefaultAsync(c => c.CenterID == id);
-        if (c == null) return NotFound(new { message = $"Center med ID {id} blev ikke fundet." });
-        return Ok(c);
+        var center = await _db.Centers
+            .Where(c => c.CenterID == id)
+            .Select(c => new
+            {
+                c.CenterID,
+                c.LocationID,
+                City = c.Location.City,
+                Halls = c.Halls.OrderBy(h => h.HallID).Select(h => new { h.HallID, h.Name }).ToList(),
+                Equipments = c.Equipments.OrderBy(e => e.EquipmentID).Select(e => new { e.EquipmentID, e.Name }).ToList(),
+                VendingMachines = c.VendingMachines.OrderBy(v => v.VendingMachineID).Select(v => new
+                {
+                    v.VendingMachineID,
+                    v.Name,
+                    v.Location,
+                    Stocks = v.Stocks.OrderBy(st => st.StockID)
+                        .Select(st => new { st.StockID, st.ProductName, st.Quantity, st.Price }).ToList()
+                }).ToList()
+            })
+            .FirstOrDefaultAsync();
+        if (center == null) return NotFound(new { message = $"Center med ID {id} blev ikke fundet." });
+        return Ok(center);
     }
 
     [HttpPost] [Authorize(Roles = "Admin")]

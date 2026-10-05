@@ -43,7 +43,10 @@ public class ClassBookingsController : ControllerBase
         var booking = new ClassBooking { MemberID = dto.MemberID, ClassID = dto.ClassID };
         _db.ClassBookings.Add(booking);
         await _db.SaveChangesAsync();
-        return CreatedAtAction(nameof(GetById), new { id = booking.BookingID }, booking);
+        var created = await _db.ClassBookings.Where(cb => cb.BookingID == booking.BookingID)
+            .Select(cb => new ClassBookingDto { BookingID = cb.BookingID, MemberID = cb.MemberID, MemberName = cb.Member.Name, ClassID = cb.ClassID, ClassName = cb.Class.Name })
+            .FirstAsync();
+        return CreatedAtAction(nameof(GetById), new { id = booking.BookingID }, created);
     }
 
     [HttpDelete("{id}")]

@@ -1,7 +1,10 @@
 using FitnessCenterr.Core.DTOs.Classes;
+using FitnessCenterr.Core.Models;
 using FitnessCenterr.Core.Services.Interfaces;
+using FitnessCenterr.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace FitnessCenterr.API.Controllers.MySQL;
 
@@ -10,45 +13,81 @@ namespace FitnessCenterr.API.Controllers.MySQL;
 [Authorize]
 public class ClassesController : ControllerBase
 {
-    private readonly IClassService _service;
-    public ClassesController(IClassService service) => _service = service;
+private readonly AppDbContext _db;
+    public ClassesController(AppDbContext db) => _db = db;
+
+    // Fælles mapping: udfylder også hal, by og antal bookinger
+    private static readonly System.Linq.Expressions.Expression<Func<Class, ClassDto>> ToDto = c => new ClassDto
+    {
+        ClassID      = c.ClassID,
+        Name         = c.Name,
+        TrainerID    = c.TrainerID,
+        TrainerName  = c.Trainer.Name,
+        ClassDate    = c.ClassDate,
+        HallID       = c.HallID,
+        HallName     = c.Hall != null ? c.Hall.Name : null,
+        LocationID   = c.LocationID,
+        City         = c.Location != null ? c.Location.City : null,
+        BookingCount = c.ClassBookings.Count
+    };
 
     [HttpGet]
-    public async Task<IActionResult> GetAll(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10,
-        [FromQuery] string? search = null,
-        [FromQuery] string? sortBy = null)
+    public async Task<IActionResult> GetAll()
     {
-        if (page < 1 || pageSize < 1 || pageSize > 100)
-            return BadRequest(new { message = "Ugyldig page/pageSize." });
+        var classes = await _db.Classes
+            .OrderBy(c => c.ClassID)
+            .Select(ToDto)
+            .ToListAsync();
+        return Ok(classes);
+    }
 
-        var result = await _service.GetAllAsync(page, pageSize, search, sortBy);
-        return Ok(result);
+    [HttpGet("upcoming")]
+    public async Task<IActionResult> GetUpcoming()
+    {
+        var now = DateTime.UtcNow;
+        var classes = await _db.Classes
+            .Where(c => c.ClassDate >= now)
+            .OrderBy(c => c.ClassDate)
+            .Select(ToDto)
+            .ToListAsync();
+        return Ok(classes);
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var cls = await _service.GetByIdAsync(id);
-        if (cls == null) return NotFound(new { message = $"Klasse med ID {id} blev ikke fundet." });
-        return Ok(cls);
+        var c = await _db.Classes.Where(c => c.ClassID == id).Select(ToDto).FirstOrDefaultAsync();
+        if (c == null) return NotFound(new { message = $"Klasse med ID {id} blev ikke fundet." });
+        return Ok(c);
     }
 
     [HttpPost]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Create([FromBody] CreateClassDto dto)
     {
-        var cls = await _service.CreateAsync(dto);
-        return CreatedAtAction(nameof(GetById), new { id = cls.ClassID }, cls);
+        var newClass = new Class
+        {
+            Name       = dto.Name,
+            TrainerID  = dto.TrainerID,
+            ClassDate  = dto.ClassDate,
+            HallID     = dto.HallID,
+            LocationID = dto.LocationID
+        };
+        _db.Classes.Add(newClass);
+        await _db.SaveChangesAsync();
+        var created = await _db.Classes.Where(c => c.ClassID == newClass.ClassID).Select(ToDto).FirstAsync();
+        return CreatedAtAction(nameof(GetById), new { id = newClass.ClassID }, created);
     }
 
     [HttpPut("{id}")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateClassDto dto)
     {
-        if (!await _service.UpdateAsync(id, dto))
-            return NotFound(new { message = $"Klasse med ID {id} blev ikke fundet." });
+        var c = await _db.Classes.FindAsync(id);
+        if (c == null) return NotFound(new { message = $"Klasse med ID {id} blev ikke fundet." });
+        c.Name = dto.Name; c.TrainerID = dto.TrainerID; c.ClassDate = dto.ClassDate;
+        c.HallID = dto.HallID; c.LocationID = dto.LocationID;
+        await _db.SaveChangesAsync();
         return NoContent();
     }
 
@@ -56,8 +95,10 @@ public class ClassesController : ControllerBase
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Delete(int id)
     {
-        if (!await _service.DeleteAsync(id))
-            return NotFound(new { message = $"Klasse med ID {id} blev ikke fundet." });
+        var c = await _db.Classes.FindAsync(id);
+        if (c == null) return NotFound(new { message = $"Klasse med ID {id} blev ikke fundet." });
+        _db.Classes.Remove(c);
+        await _db.SaveChangesAsync();
         return NoContent();
     }
 }

@@ -54,7 +54,10 @@ public class MembershipsController : ControllerBase
         var membership = new Membership { MemberID = dto.MemberID, SubscriptionID = dto.SubscriptionID, StartDate = dto.StartDate };
         _db.Memberships.Add(membership);
         await _db.SaveChangesAsync();
-        return CreatedAtAction(nameof(GetById), new { id = membership.MembershipID }, membership);
+        var created = await _db.Memberships.Where(ms => ms.MembershipID == membership.MembershipID)
+            .Select(ms => new MembershipDto { MembershipID = ms.MembershipID, MemberID = ms.MemberID, MemberName = ms.Member.Name, SubscriptionID = ms.SubscriptionID, SubscriptionType = ms.Subscription.Type, SubscriptionPrice = ms.Subscription.Price, StartDate = ms.StartDate })
+            .FirstAsync();
+        return CreatedAtAction(nameof(GetById), new { id = membership.MembershipID }, created);
     }
 
     [HttpPut("{id}")]
