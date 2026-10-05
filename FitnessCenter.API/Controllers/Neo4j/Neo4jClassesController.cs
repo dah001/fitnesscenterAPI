@@ -36,7 +36,7 @@ public class Neo4jClassesController : ControllerBase
         var result = await session.RunAsync(
             $@"MATCH (c:FitnessClass) {whereClause}
                OPTIONAL MATCH (t:Trainer)-[:TEACHES]->(c)
-               OPTIONAL MATCH (m:Member)-[:BOOKED]->(c)
+               OPTIONAL MATCH (m:Member)-[:HAS_BOOKING]->(:ClassBooking)-[:BOOKED]->(c)
                OPTIONAL MATCH (c)-[:HELD_AT]->(l:Location)
                RETURN c, t, count(DISTINCT m) AS bookings, l
                ORDER BY {orderClause} SKIP $skip LIMIT $limit",
@@ -69,7 +69,7 @@ public class Neo4jClassesController : ControllerBase
         var result = await session.RunAsync(
             @"MATCH (c:FitnessClass {classID: $id})
               OPTIONAL MATCH (t:Trainer)-[:TEACHES]->(c)
-              OPTIONAL MATCH (m:Member)-[:BOOKED]->(c)
+              OPTIONAL MATCH (m:Member)-[:HAS_BOOKING]->(:ClassBooking)-[:BOOKED]->(c)
               OPTIONAL MATCH (c)-[:HELD_AT]->(l:Location)
               RETURN c, t, collect(DISTINCT m) AS members, l",
             new { id });
@@ -105,7 +105,7 @@ public class Neo4jClassesController : ControllerBase
         if (top < 1 || top > 50) return BadRequest(new { message = "Top skal være mellem 1 og 50." });
         await using var session = _neo4j.OpenSession();
         var result = await session.RunAsync(@"
-            MATCH (m:Member)-[:BOOKED]->(c:FitnessClass)
+            MATCH (m:Member)-[:HAS_BOOKING]->(:ClassBooking)-[:BOOKED]->(c:FitnessClass)
             OPTIONAL MATCH (t:Trainer)-[:TEACHES]->(c)
             RETURN c.classID AS classID, c.name AS className, t.name AS trainerName, count(m) AS bookings
             ORDER BY bookings DESC LIMIT $top",
