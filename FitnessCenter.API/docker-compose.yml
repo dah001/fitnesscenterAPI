@@ -71,7 +71,7 @@ services:
       - Neo4j__Username=neo4j
       - Neo4j__Password=neo4jpassword
       - Jwt__Key=fitness-center-super-secret-key-2024!!
-      - Anthropic__ApiKey=${ANTHROPIC_API_KEY:-}
+      - Ollama__BaseUrl=http://host.docker.internal:11434
     depends_on:
       mysql:
         condition: service_healthy
