@@ -18,7 +18,7 @@ var config = new ConfigurationBuilder()
 var mysqlConn   = config.GetConnectionString("DefaultConnection")!;  
 var mongoConn   = config["MongoDB:ConnectionString"]!;                // MongoDB Atlas (mål)
 var mongoDbName = config["MongoDB:Database"]!;
-var neo4jUri    = config["Neo4j:Uri"]!;                               // Neo4j AuraDB (mål)
+var neo4jUri    = config["Neo4j:Uri"]!;                               // Neo4j (mål)
 var neo4jUser   = config["Neo4j:Username"]!;
 var neo4jPass   = config["Neo4j:Password"]!;
 
@@ -172,7 +172,7 @@ try
             // Nested array inde i et embedded objekt — VendingMachineStock-rækker
             { "stock", new BsonArray(stocks.Where(s => s.VendingMachineID == v.VendingMachineID).Select(s => new BsonDocument
             {
-                { "product", s.ProductName ?? "" },
+                { "productName", s.ProductName ?? "" },
                 { "quantity", s.Quantity ?? 0 },
                 { "price", s.Price.HasValue ? (double)s.Price.Value : 0 }
             })) }
@@ -197,7 +197,7 @@ try
 }
 catch (Exception ex)
 {
-    Console.WriteLine($"  ⚠️  MongoDB fejlede: {ex.Message}");
+    Console.WriteLine($"   MongoDB fejlede: {ex.Message}");
     Console.WriteLine("  MongoDB springes over – fortsætter med Neo4j...");
 }
 // MONGODB SLUT
@@ -207,6 +207,33 @@ catch (Exception ex)
 Console.WriteLine("\nMigrerer til Neo4j...");
 
 var neo4jDriver = GraphDatabase.Driver(neo4jUri, AuthTokens.Basic(neo4jUser, neo4jPass));
+
+// Vis hvilke indstillinger der faktisk bruges (passwordet vises ikke, kun længden)
+Console.WriteLine($"  Forbinder til {neo4jUri} som '{neo4jUser}' (password: {neo4jPass.Length} tegn)");
+Console.WriteLine($"  Indstillinger læst fra: {Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json")}");
+
+// Tjek forbindelsen først, så en fejl giver en klar besked i stedet for et crash
+try
+{
+    await neo4jDriver.VerifyConnectivityAsync();
+}
+catch (Neo4j.Driver.AuthenticationException)
+{
+    Console.WriteLine("  Neo4j afviste brugernavn eller password.");
+    Console.WriteLine("     Log ind i Neo4j Desktop (Connect → Query) med samme bruger og password.");
+    Console.WriteLine("     Virker det ikke dér, så nulstil passwordet og ret Neo4j:Password i filen ovenfor.");
+    Console.WriteLine("  MongoDB er migreret – kun Neo4j blev sprunget over.");
+    return;
+}
+catch (Neo4j.Driver.ServiceUnavailableException ex)
+{
+    Console.WriteLine($"  Kunne ikke nå Neo4j på {neo4jUri}: {ex.Message}");
+    Console.WriteLine("     Tjek at databasen står som RUNNING i Neo4j Desktop.");
+    Console.WriteLine("  MongoDB er migreret – kun Neo4j blev sprunget over.");
+    return;
+}
+Console.WriteLine("  ✓ Forbundet til Neo4j.");
+
 var session = neo4jDriver.AsyncSession();
 
 await session.RunAsync("MATCH (n) DETACH DELETE n");
@@ -260,9 +287,9 @@ Console.WriteLine($"  Neo4j: {vending.Count} VendingMachine noder oprettet.");
 
 foreach (var s in stocks)
     await session.RunAsync(
-        "MATCH (v:VendingMachine {vendingMachineID: $vId}) CREATE (p:Product {stockID: $id, productName: $name, quantity: $qty, price: $price})-[:SOLD_BY]->(v)",
+        "MATCH (v:VendingMachine {vendingMachineID: $vId}) CREATE (vs:VendingMachineStock {stockID: $id, productName: $name, quantity: $qty, price: $price})-[:SOLD_BY]->(v)",
         new { id = s.StockID, name = s.ProductName ?? "", qty = s.Quantity ?? 0, price = (double)(s.Price ?? 0), vId = s.VendingMachineID });
-Console.WriteLine($"  Neo4j: {stocks.Count} Product noder oprettet.");
+Console.WriteLine($"  Neo4j: {stocks.Count} VendingMachineStock noder oprettet.");
 
 foreach (var s in staffs)
     await session.RunAsync("CREATE (s:Staff {staffID: $id, name: $name, role: $role})",

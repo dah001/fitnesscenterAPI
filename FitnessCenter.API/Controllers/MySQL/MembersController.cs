@@ -4,6 +4,7 @@ using FitnessCenterr.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Data.Common;
 
 namespace FitnessCenterr.API.Controllers.MySQL;
 
@@ -53,7 +54,8 @@ public class MembersController : ControllerBase
                 await conn.OpenAsync();
 
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"CALL sp_get_member_profile({id})";
+            cmd.CommandText = "CALL sp_get_member_profile(@id)";
+            AddParam(cmd, "@id", id);
 
             using var reader = await cmd.ExecuteReaderAsync();
             var results = new List<object>();
@@ -99,7 +101,10 @@ public class MembersController : ControllerBase
                 await conn.OpenAsync();
 
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"CALL sp_search_members('{search ?? ""}', {page}, {pageSize})";
+            cmd.CommandText = "CALL sp_search_members(@search, @page, @pageSize)";
+            AddParam(cmd, "@search", string.IsNullOrWhiteSpace(search) ? null : search);
+            AddParam(cmd, "@page", page);
+            AddParam(cmd, "@pageSize", pageSize);
 
             using var reader = await cmd.ExecuteReaderAsync();
             var items = new List<object>();
@@ -135,7 +140,9 @@ public class MembersController : ControllerBase
                 await conn.OpenAsync();
 
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"SELECT MemberID, MemberName, Email, BirthDate, TrainerName, SubscriptionType, SubscriptionPrice, MemberSince, TotalBookings, TotalPaid FROM v_member_overview LIMIT {pageSize} OFFSET {(page - 1) * pageSize}";
+            cmd.CommandText = "SELECT MemberID, MemberName, Email, BirthDate, TrainerName, SubscriptionType, SubscriptionPrice, MemberSince, TotalBookings, TotalPaid FROM v_member_overview LIMIT @limit OFFSET @offset";
+            AddParam(cmd, "@limit", pageSize);
+            AddParam(cmd, "@offset", (page - 1) * pageSize);
 
             using var reader = await cmd.ExecuteReaderAsync();
             var items = new List<object>();
@@ -162,6 +169,16 @@ public class MembersController : ControllerBase
         {
             return StatusCode(500, new { message = "Fejl ved kald af view.", detail = ex.Message });
         }
+    }
+
+    // Tilføjer en navngiven parameter til kommandoen. Værdien sendes separat
+    // fra SQL-teksten, så input aldrig kan ændre forespørgslens struktur.
+    private static void AddParam(DbCommand cmd, string name, object? value)
+    {
+        var p = cmd.CreateParameter();
+        p.ParameterName = name;
+        p.Value = value ?? DBNull.Value;
+        cmd.Parameters.Add(p);
     }
 
     [HttpPost]

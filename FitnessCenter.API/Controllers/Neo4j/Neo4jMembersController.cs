@@ -72,7 +72,7 @@ public class Neo4jMembersController : ControllerBase
     {
         await using var session = _neo4j.OpenSession();
         var result = await session.RunAsync(
-            "MATCH (m:Member {memberID: $id}) OPTIONAL MATCH (m)-[:TRAINED_BY]->(t:Trainer) OPTIONAL MATCH (m)-[:BOOKED]->(c:FitnessClass) RETURN m, t, collect(c) AS classes",
+            "MATCH (m:Member {memberID: $id}) OPTIONAL MATCH (m)-[:TRAINED_BY]->(t:Trainer) OPTIONAL MATCH (m)-[:HAS_BOOKING]->(:ClassBooking)-[:BOOKED]->(c:FitnessClass) RETURN m, t, collect(c) AS classes",
             new { id });
 
         var records = await result.ToListAsync();
@@ -105,8 +105,8 @@ public class Neo4jMembersController : ControllerBase
         // Graph-specific: find classes that members with the same trainer have booked, but this member hasn't
         var result = await session.RunAsync(@"
             MATCH (m:Member {memberID: $id})-[:TRAINED_BY]->(t:Trainer)<-[:TRAINED_BY]-(other:Member)
-            MATCH (other)-[:BOOKED]->(c:FitnessClass)
-            WHERE NOT (m)-[:BOOKED]->(c)
+            MATCH (other)-[:HAS_BOOKING]->(:ClassBooking)-[:BOOKED]->(c:FitnessClass)
+            WHERE NOT (m)-[:HAS_BOOKING]->(:ClassBooking)-[:BOOKED]->(c)
             RETURN DISTINCT c.classID AS classID, c.name AS className, count(other) AS popularity
             ORDER BY popularity DESC
             LIMIT 5",

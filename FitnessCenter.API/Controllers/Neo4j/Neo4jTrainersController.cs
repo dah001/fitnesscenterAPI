@@ -83,7 +83,7 @@ public class Neo4jTrainersController : ControllerBase
         // Graph-specific: find all members of trainer, and what other classes those members have booked
         await using var session = _neo4j.OpenSession();
         var result = await session.RunAsync(@"
-            MATCH (t:Trainer {trainerID: $id})<-[:TRAINED_BY]-(m:Member)-[:BOOKED]->(c:FitnessClass)
+            MATCH (t:Trainer {trainerID: $id})<-[:TRAINED_BY]-(m:Member)-[:HAS_BOOKING]->(:ClassBooking)-[:BOOKED]->(c:FitnessClass)
             RETURN m.name AS memberName, c.name AS className, c.classDate AS classDate
             ORDER BY m.name",
             new { id });
